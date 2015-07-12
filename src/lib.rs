@@ -21,32 +21,50 @@ use winapi::wchar_t; //u16
 use winapi::winnt::HANDLE;
 use winapi::basetsd::SIZE_T;
 //functions
-use kernel32::{GlobalAlloc, GlobalLock, GlobalUnlock};
+use kernel32::{GlobalAlloc, GlobalLock, GlobalUnlock, GetLastError};
 use user32::{SetClipboardData, EmptyClipboard, OpenClipboard, GetClipboardData, CloseClipboard};
 
 ///Set clipboard with text.
 pub fn set_clipboard<T: ?Sized + AsRef<std::ffi::OsStr>>(text: &T) {
     let format: UINT = 13; //unicode
-    let ghnd: UINT = 66;
+    let ghnd: UINT = 66; //GHND + GPTR
     let text = text.as_ref();
     unsafe {
         //allocate buffer and copy string to it.
         let utf16_buff: Vec<u16> = text.encode_wide().collect();
-        let len: usize = (utf16_buff.len()+1) * 2;
+        println!("utf16_buff len()={}", utf16_buff.len());
+        let len: usize = (utf16_buff.len() + 1) * 2;
+        println!("Allocate len={}", len);
         let handler: HGLOBAL = GlobalAlloc(ghnd, len as SIZE_T);
+        println!("GlobalAlloc lasterror={}", GetLastError());
         let lock = GlobalLock(handler) as *mut u16;
+        println!("GlobalLock lasterror={}", GetLastError());
 
-                                      //src,         dest, len
+        let len: usize = (len -1) / 2;
+                                      //src,               dest, len
         std::ptr::copy_nonoverlapping(utf16_buff.as_ptr(), lock, len);
-        std::ptr::write_bytes(lock.offset((len) as isize), 0, 2);
+        let len: isize = len as isize;
+        *lock.offset(len) = 0;
+        println!("String len={}", len);
+        println!("win buffer: {:?}", lock);
+        for idx in (0..rust_strlen(lock)) {
+            print!("{:?}: buff[{}]={} | ", lock.offset(idx as isize), idx, *lock.offset(idx as isize));
+        }
+        println!("");
+        println!("{:?}: buff[{}]={}", lock.offset(len), len, *lock.offset(len));
 
         GlobalUnlock(handler);
+        println!("GlobalUnlock lasterror={}", GetLastError());
 
         //Set new clipboard text.
-        EmptyClipboard();
         OpenClipboard(std::ptr::null_mut());
+        println!("OpenClipboard lasterror={}", GetLastError());
+        EmptyClipboard();
+        println!("EmptyClipboard lasterror={}", GetLastError());
         SetClipboardData(format, handler);
+        println!("SetClipboardData lasterror={}", GetLastError());
         CloseClipboard();
+        println!("CloseClipboard lasterror={}", GetLastError());
     }
 }
 
